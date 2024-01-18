@@ -1,0 +1,175 @@
+hydra:
+  output_subdir: null  # disable creating .hydra directory
+  run:
+    dir: .  # disable output directory created by hydra
+  job:
+    chdir: false  # disable changing working directory
+
+usr_config: null  # e.g. project_root/configs/user_configs/user_config1.yaml
+
+defaults:
+  - _self_  # import default.yaml itself
+  - datasets: ???  # import dataset
+  - override hydra/hydra_logging: disabled   # disable hydra logging because we will use wandb as our logger
+  - override hydra/job_logging: disabled   # disable job logging because we will use wandb as our logger
+
+
+
+################### Don't modify parameters above #######################
+
+################### You can modify all parameters below #################
+
+wandb:
+  enable: false
+  api_key: 7e17064baa2aaa0cccea0a2159ad51c758b7bf3a  # your wandb api key
+  entity: ies_kaige  # the place to save your runs. can be your wandb username or team name
+  project: ma_kaige # the name of your project
+  name: cls_formal_local_scalar_add_neighbor_bs8*2_lr1e-4to1e-8_cosLR_adamw_weightdecay1_baseFea_ss_keyOne_scale0 # the name your run
+
+train:  # only valid when running the training script
+  epochs: 200
+  lr: 1e-4
+  lr_scheduler:
+    enable: true
+    which: cosLR  # expLR, stepLR, cosLR or cos_warmupLR
+    expLR:
+      gamma: 0.95
+    stepLR:
+      gamma: 0.2  # lr = gamma * lr, when decay step is hit
+      decay_step: 50
+    cosLR:
+      T_max: ${train.epochs}  # maximum epochs
+      eta_min: 1e-8  # minimum lr
+    cos_warmupLR:
+      warmup_epochs: 10  # number of epochs the warmup process takes
+      warmup_init_lr: ${train.lr_scheduler.cos_warmupLR.eta_min}  # initial warmup lr
+      T_max: 190  # number of epochs the cosine annealing process takes. should be epochs - warmup_epochs
+      eta_min: 1e-6  # minimum lr of cosine annealing process
+  optimizer:
+    which: adamw  # adamw or sgd
+    weight_decay: 1
+  consistency_loss_factor: 1  # only valid when training modelnet model
+  validation_freq: 1  # frequency in epoch(s) to validate the model
+  label_smoothing: false
+  epsilon: 0.2  # epsilon for label smoothing
+  dataloader:
+    selected_points: 1024  # points to be selected from every point cloud
+    fps: true  #  whether to use fps to select points. if false, use random downsample to select points
+    combine_trainval: true  # combine train and validation set as train set
+    batch_size_per_gpu: 8  # the actual batch size should be batch_size_per_gpu * num_gpu
+    num_workers: ${train.ddp.nproc_this_node}  # the number of subprocess to load data
+    prefetch: ${train.dataloader.batch_size_per_gpu}  # samples to be prefetched. e.g. 64 means 64*num_workers samples to be prefetched
+    pin_memory: true  # pin memory in RAM
+    vote:
+      enable: true
+      num_vote: 10
+      vote_start_epoch: 2
+    data_augmentation:
+      enable: false
+      num_aug: 1  # how many augmentations applied in one point cloud at the same time
+      jitter:  # add Gaussian noise to point cloud xyz positions
+        enable: true
+        std: 0.01
+        clip: 0.05
+      rotate:
+        enable: true
+        which_axis: y
+        angle_range: [-15, 15]  # the unit is degree
+      translate:
+        enable: true
+        x_range: [-0.2, 0.2]
+        y_range: [-0.2, 0.2]
+        z_range: [-0.2, 0.2]
+      anisotropic_scale:
+        enable: true
+        x_range: [0.66, 1.5]
+        y_range: [0.66, 1.5]
+        z_range: [0.66, 1.5]
+  ddp:
+    which_gpu: [0]
+    syn_bn: true  # synchronize batch normalization among gpus
+    master_addr: localhost  # don't change this if you use only one PC
+    master_port: 12345  # please choose an available port
+    nnodes: 1  # how many PCs you want to use
+    nproc_this_node: 1  # how many gpu you want to use in current PC, should match 'which_gpu'
+    rank_starts_from: 0  # don't change this if you use only one PC
+    world_size: 1  # this is equal to 'nproc_this_node' if you only use one PC
+  amp: false  # whether to use automatic mixed precision
+  grad_clip:
+    enable: false
+    mode: value  # clip by value or by norm
+    max_norm: 1e-2
+    value: 1e-2
+  debug:
+    enable: false
+    check_layer_input_range: true
+    check_layer_output_range: true
+    check_layer_parameter_range: true
+    check_gradient_input_range: true  # gradient w.r.t layer input
+    check_gradient_output_range: true  # gradient w.r.t layer output
+    check_gradient_parameter_range: true  # gradient w.r.t layer parameters
+
+test:  # only valid when running the test script
+  label_smoothing: false
+  epsilon: 0.2  # epsilon for label smoothing
+  dataloader:
+    batch_size_per_gpu: 4
+    num_workers: ${test.ddp.nproc_this_node}  # the number of subprocess to load data
+    prefetch: ${test.dataloader.batch_size_per_gpu}  # samples to be prefetched. e.g. 64 means 64*num_workers samples to be prefetched
+    pin_memory: true  # pin memory in RAM
+    vote:
+      enable: true
+      num_vote: 10
+      vote_start_epoch: 2
+  ddp:
+    which_gpu: [0]
+    master_addr: localhost  # don't change this if you use only one PC
+    master_port: 12345  # please choose an available port
+    nnodes: 1  # how many PCs you want to use
+    nproc_this_node: 1  # how many gpu you want to use in current PC, should match 'which_gpu'
+    rank_starts_from: 0  # don't change this if you use only one PC
+    world_size: 1  # this is equal to 'nproc_this_node' if you only use one PC
+  print_results: true
+  visualize_preds:  # only be used in apes
+    enable: false
+    format: png  # png or ply
+    vis_which: [0, 4]  # which category to be visualized
+    num_vis: 5  # how many point clouds to visualize for one category
+  visualize_attention_heatmap:  # only be used in apes
+    enable: false
+    format: png  # png or ply
+    vis_which: [0, 4]  # which category to be visualized
+    num_vis: 5  # how many point clouds to visualize for one category
+Point_Embedding:
+  point_emb1_in: [3]
+  point_emb1_out: [32]
+  point_emb2_in: [32]
+  point_emb2_out: [128]
+
+Downsample:
+  points_select_basis: ['xyz', 'xyz', 'xyz', 'xyz']
+  n_samples: [512, 128, 32, 8] # List for each downsample layer
+  embedding_k: [16, 8, 4, 2]
+  conv1_channel_in: [256, 256, 256, 256]
+  conv1_channel_out: [128, 128, 128, 128]
+  conv2_channel_in: [128, 128, 128, 128]
+  conv2_channel_out: [128, 128, 128, 128]
+
+Global_SelfAttention_Layer:
+  pe_method: ['false', 'false', 'false', 'false']
+  q_in: [64, 64, 64, 128, 256, 512] # List for each attention layer
+  q_out: [64, 64, 64, 128, 256, 512]
+  k_in: [64, 64, 64, 128, 256, 512]
+  k_out: [64, 64, 64, 128, 256, 512]
+  v_in: [64, 64, 64, 128, 256, 512]
+  v_out: [64, 64, 64, 128, 256, 512]
+  num_heads: [4, 4, 4, 4, 4, 4, 4]
+  att_score_method: ['global_dot', 'global_dot', 'global_dot', 'global_dot', 'global_dot', 'global_dot']
+  ff_conv1_channels_in: [64, 64, 64, 128, 256, 512]
+  ff_conv1_channels_out: [256, 256, 256, 512, 1024, 2048]
+  ff_conv2_channels_in: [256, 256, 256, 512, 1024, 2048]
+  ff_conv2_channels_out: [64, 64, 64, 128, 256, 512]
+
+UpSampleInterpolation:
+  v_dense: [256, 128, 64, 32]
+  up_k: [4, 4, 4, 4]
