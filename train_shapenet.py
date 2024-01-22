@@ -100,7 +100,8 @@ def train(local_rank, config):  # the first arg must be local rank for the sake 
                                                                                                       config.train.dataloader.data_augmentation.jitter.std, config.train.dataloader.data_augmentation.jitter.clip, config.train.dataloader.data_augmentation.rotate.enable, config.train.dataloader.data_augmentation.rotate.which_axis,
                                                                                                       config.train.dataloader.data_augmentation.rotate.angle_range, config.train.dataloader.data_augmentation.translate.enable, config.train.dataloader.data_augmentation.translate.x_range,
                                                                                                       config.train.dataloader.data_augmentation.translate.y_range, config.train.dataloader.data_augmentation.translate.z_range, config.train.dataloader.data_augmentation.anisotropic_scale.enable,
-                                                                                                      config.train.dataloader.data_augmentation.anisotropic_scale.x_range, config.train.dataloader.data_augmentation.anisotropic_scale.y_range, config.train.dataloader.data_augmentation.anisotropic_scale.z_range)
+                                                                                                      config.train.dataloader.data_augmentation.anisotropic_scale.x_range, config.train.dataloader.data_augmentation.anisotropic_scale.y_range, config.train.dataloader.data_augmentation.anisotropic_scale.z_range, config.train.dataloader.data_augmentation.anisotropic_scale.isotropic,
+                                                                                                      config.train.dataloader.vote.enable, config.train.dataloader.vote.num_vote)
     else:
         raise ValueError('Not implemented!')
 
@@ -134,22 +135,29 @@ def train(local_rank, config):  # the first arg must be local rank for the sake 
                                                config['Downsample']['conv1_channel_out'],
                                                config['Downsample']['conv2_channel_in'],
                                                config['Downsample']['conv2_channel_out'],
-                                               config['Global_SelfAttention_Layer']['pe_method'],
-                                               config['Global_SelfAttention_Layer']['q_in'],
-                                               config['Global_SelfAttention_Layer']['q_out'],
-                                               config['Global_SelfAttention_Layer']['k_in'],
-                                               config['Global_SelfAttention_Layer']['k_out'],
-                                               config['Global_SelfAttention_Layer']['v_in'],
-                                               config['Global_SelfAttention_Layer']['v_out'],
-                                               config['Global_SelfAttention_Layer']['num_heads'],
-                                               config['Global_SelfAttention_Layer']['att_score_method'],
-                                               config['Global_SelfAttention_Layer']['ff_conv1_channels_in'],
-                                               config['Global_SelfAttention_Layer']['ff_conv1_channels_out'],
-                                               config['Global_SelfAttention_Layer']['ff_conv2_channels_in'],
-                                               config['Global_SelfAttention_Layer']['ff_conv2_channels_out'],
+                                               config['Local_CrossAttention_layer']['pe_method'],
+                                               config['Local_CrossAttention_layer']['single_scale_or_multi_scale'],
+                                               config['Local_CrossAttention_layer']['key_one_or_sep'],
+                                               config['Local_CrossAttention_layer']['shared_ca'],
+                                               config['Local_CrossAttention_layer']['K'],
+                                               config['Local_CrossAttention_layer']['scale'],
+                                               config['Local_CrossAttention_layer']['neighbor_selection_method'],
+                                               config['Local_CrossAttention_layer']['neighbor_type'],
+                                               config['Local_CrossAttention_layer']['mlp_or_sum'],
+                                               config['Local_CrossAttention_layer']['q_in'],
+                                               config['Local_CrossAttention_layer']['q_out'],
+                                               config['Local_CrossAttention_layer']['k_in'],
+                                               config['Local_CrossAttention_layer']['k_out'],
+                                               config['Local_CrossAttention_layer']['v_in'],
+                                               config['Local_CrossAttention_layer']['v_out'],
+                                               config['Local_CrossAttention_layer']['num_heads'],
+                                               config['Local_CrossAttention_layer']['att_score_method'],
+                                               config['Local_CrossAttention_layer']['ff_conv1_channels_in'],
+                                               config['Local_CrossAttention_layer']['ff_conv1_channels_out'],
+                                               config['Local_CrossAttention_layer']['ff_conv2_channels_in'],
+                                               config['Local_CrossAttention_layer']['ff_conv2_channels_out'],
                                                config['UpSampleInterpolation']['v_dense'],
-                                               config['UpSampleInterpolation']['up_k']
-                                               )
+                                               config['UpSampleInterpolation']['up_k'])
 
     # synchronize bn among gpus
     if config.train.ddp.syn_bn:  #TODO: test performance
@@ -358,9 +366,26 @@ def train(local_rank, config):  # the first arg must be local rank for the sake 
 
             with torch.no_grad():
                 for samples, seg_labels, cls_label in validation_loader:
-                    samples, seg_labels, cls_label = samples.to(device), seg_labels.to(device), cls_label.to(device)
-                    preds = my_model(samples, cls_label)
-                    val_loss = loss_fn(preds, seg_labels)
+                    seg_labels, cls_label = seg_labels.to(device), cls_label.to(device)
+                    
+                    # 初始化用于存储voting预测的列表
+                    voting_preds_list = []
+                    voting_losses = []
+
+                    # 执行voting
+                    for i in range(config.train.dataloader.vote.num_vote):
+                        # 如果提供了多个样本变体，则选择其中之一，否则使用原始样本
+                        samples_vote = samples[i % len(samples)].to(device) if config.train.dataloader.vote.enable else samples.to(device)
+
+                        preds = my_model(samples_vote, cls_label)
+                        val_loss = loss_fn(preds, seg_labels)
+
+                        voting_preds_list.append(preds)
+                        voting_losses.append(val_loss)
+
+                    # 聚合voting的预测结果和损失
+                    preds = torch.mean(torch.stack(voting_preds_list), dim=0)
+                    val_loss = sum(voting_losses) / len(voting_losses)
 
                     # collect the result among all gpus
                     pred_gather_list = [torch.empty_like(preds).to(device) for _ in range(config.train.ddp.nproc_this_node)]
@@ -394,7 +419,6 @@ def train(local_rank, config):  # the first arg must be local rank for the sake 
                 val_miou = sum(shape_ious) / len(shape_ious)
                 val_category_miou = sum(category_iou) / len(category_iou)
                 val_loss = sum(val_loss_list) / len(val_loss_list)
-
 
 
             # log results
