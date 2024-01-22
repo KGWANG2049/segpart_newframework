@@ -14,7 +14,6 @@ def index_points(points, idx):
     res = torch.gather(points, 1, idx[..., None].expand(-1, -1, points.shape[-1]))
     return res.view(*raw_shape, -1)
 
-
 def knn(a, b, k):
     """
     :param a: a.shape == (B, N, C)
@@ -190,9 +189,9 @@ def select_neighbors_single_scale(pcd, coordinate, K, scale, neighbor_selection_
     pcd = pcd.permute(0, 2, 1)  # pcd.shape == (B, N, C)
     coordinate = coordinate.permute(0, 2, 1)  # coordinate.shape == (B, N, C)
     if neighbor_selection_method == 'coordinate':
-        idx = knn(coordinate, coordinate, K * 2 ** scale)  # idx.shape == (B, N, K)
+        _, idx = knn(coordinate, coordinate, K * 2 ** scale)  # idx.shape == (B, N, K)
     elif neighbor_selection_method == 'feature':
-        idx = knn(pcd, pcd, K * 2 ** scale)  # idx.shape == (B, N, K)
+        _, idx = knn(pcd, pcd, K * 2 ** scale)  # idx.shape == (B, N, K)
     else:
         raise ValueError(
             f'neighbor_selection_method should be coordinate or feature, but got {neighbor_selection_method}')
@@ -220,8 +219,7 @@ def select_neighbors_single_scale(pcd, coordinate, K, scale, neighbor_selection_
         output = torch.cat([neighbors, neighbors - diff], dim=3)  # output.shape == (B, N, K, 2C)
     elif neighbor_type == 'center_neighbor_diff':
         diff = neighbors - pcd[:, :, None, :]  # diff.shape == (B, N, K, C)
-        output = torch.cat([pcd.unsqueeze(2).expand(-1, -1, K, -1), neighbors, diff],
-                           dim=3)  # output.shape == (B, N, K, 3C)
+        output = torch.cat([pcd.unsqueeze(2).expand(-1, -1, K, -1), neighbors, diff], dim=3)  # output.shape == (B, N, K, 3C)
     else:
         raise ValueError(f'group_type should be "neighbor", "diff", "center_neighbor", "center_diff", '
                          f'"neighbor_diff", "center_neighbor_diff" but got {neighbor_type}')
