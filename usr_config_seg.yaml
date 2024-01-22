@@ -1,9 +1,9 @@
 wandb:
-  enable: false
+  enable: true
   api_key: 7e17064baa2aaa0cccea0a2159ad51c758b7bf3a  # your wandb api key
   entity: ies_kaige  # the place to save your runs. can be your wandb username or team name
   project: ma_kaige # the name of your project
-  name: seg_lab_downup1111_pe_f_glodot_lr1e-4to1e-8_cosLR__wdecay1e-4_baseFea_ss_keyOne_scale0
+  name: seg_serD_downup1111_att1111_lastestup_max_ave_local_vector_sub_wdecay1e-4
 train:  # only valid when running the training script
   epochs: 200
   lr: 1e-4
@@ -60,8 +60,9 @@ train:  # only valid when running the training script
         x_range: [0.66, 1.5]
         y_range: [0.66, 1.5]
         z_range: [0.66, 1.5]
+        isotropic: false
   ddp:
-    which_gpu: [0]
+    which_gpu: [2]
     syn_bn: true  # synchronize batch normalization among gpus
     master_addr: localhost  # don't change this if you use only one PC
     master_port: 12346  # please choose an available port
@@ -95,9 +96,9 @@ test:  # only valid when running the test script
     vote:
       enable: true
       num_vote: 10
-      vote_start_epoch: 2
+      vote_start_epoch: 150
   ddp:
-    which_gpu: [0]
+    which_gpu: [2]
     master_addr: localhost  # don't change this if you use only one PC
     master_port: 12346  # please choose an available port
     nnodes: 1  # how many PCs you want to use
@@ -124,30 +125,39 @@ Point_Embedding:
   point_emb2_out: [32]
 
 Downsample:
-  points_select_basis: ['feature', 'feature', 'feature', 'feature']  # xyz or feature
-  n_samples: [1024, 512, 256, 128] # List for each downsample layer
-  embedding_k: [16, 16, 16, 16]
-  conv1_channel_in: [64, 128, 256, 512]
-  conv1_channel_out: [64, 128, 256, 512]
-  conv2_channel_in: [64, 128, 256, 512]
-  conv2_channel_out: [64, 128, 256, 512]
+  points_select_basis: ['xyz', 'xyz', 'xyz']  # xyz or feature
+  n_samples: [512, 128, 32] # List for each downsample layer
+  embedding_k: [32, 32, 32]
+  conv1_channel_in: [64, 128, 256]
+  conv1_channel_out: [64, 128, 256]
+  conv2_channel_in: [64, 128, 256]
+  conv2_channel_out: [64, 128, 256]
 
-Global_SelfAttention_Layer:
-  pe_method: ['false', 'false', 'false', 'false']
-  q_in: [64, 128, 256, 512] # List for each attention layer
-  q_out: [64, 128, 256, 512]
-  k_in: [64, 128, 256, 512]
-  k_out: [64, 128, 256, 512]
-  v_in: [64, 128, 256, 512]
-  v_out: [64, 128, 256, 512]
-  num_heads: [4, 4, 4, 4]
-  att_score_method: ['global_dot', 'global_dot', 'global_dot', 'global_dot']
-  ff_conv1_channels_in: [64, 128, 256, 512]
-  ff_conv1_channels_out: [256, 512, 1024, 2048]
-  ff_conv2_channels_in: [256, 512, 1024, 2048]
-  ff_conv2_channels_out: [64, 128, 256, 512]
 
+Local_CrossAttention_layer:
+  enable: true
+  pe_method: ['false', 'false', 'false']
+  single_scale_or_multi_scale: ['ss', 'ss', 'ss']  # need input 'ss' or 'ms'
+  key_one_or_sep: ['one', 'one', 'one']  # need input  'one' or 'sep', when single_scale_or_multi_scale = ss, only 'one' is Effective
+  shared_ca: [false, false, false]  # it must be false when key_one_or_sep = one
+  K: [32, 16, 8]
+  scale: [2, 2, 2]  # represent different meanings. when single_scale_or_multi_scale is ss, 2 means single 2, when ms 2 means use scale 0 & 1 & 2
+  neighbor_selection_method: ['feature', 'feature', 'feature']  # feature or coordinate
+  neighbor_type: ['center_neighbor', 'center_neighbor', 'center_neighbor']  # diff or neighbor or center_diff or center_neighbor or neighbor_diff or center_neighbor_diff
+  mlp_or_sum: ['sum', 'sum', 'sum']  # its useful only when single_scale_or_multi_scale = ms, and key_one_or_sep = sep
+  q_in: [64, 128, 256]
+  q_out: [64, 128, 256]
+  k_in: [64, 128, 256]
+  k_out: [64, 128, 256]
+  v_in: [64, 128, 256]
+  v_out: [64, 128, 256]
+  num_heads: [4, 4, 4]
+  att_score_method: ['local_vector_sub', 'local_vector_sub', 'local_vector_sub']  # local_scalar_dot or local_scalar_sub or local_scalar_add or local_scalar_cat or local_vector_sub or local_vector_add
+  ff_conv1_channels_in: [64, 128, 256]                                                          # global_dot or global_sub
+  ff_conv1_channels_out: [256, 512, 1024]  #input x 4
+  ff_conv2_channels_in: [256, 512, 1024]
+  ff_conv2_channels_out: [64, 128, 256]
 
 UpSampleInterpolation:
-  v_dense: [256, 128, 64, 32]
-  up_k: [4, 4, 4, 4]
+  v_dense: [128, 64, 32]
+  up_k: [4, 4, 4]
